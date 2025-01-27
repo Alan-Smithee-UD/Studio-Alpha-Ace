@@ -4,7 +4,7 @@
  * @author アラン・スミシー
  * 
  * @help
- * 相手の属性有効度に一定の値を加算してからダメージを計算する特徴を提供します
+ * 相手の属性、ステート、弱体有効度に一定の値を加算してから処理を行う特徴を提供します
  * 
  * 【使い方】
  * 特徴を持つ項目（アクター、職業、ステート、武器、防具、敵キャラ）に
@@ -15,12 +15,20 @@
  * →属性IDが1の攻撃をする時、相手の属性有効度が+20%される。
  * 　元が50%なら70%、元が100%なら120%。
  * 
- * ステートに対するブレイクは以下のように設定できます
+ * ステート有効度に対するブレイクは以下のように設定できます
  * 
  * <ElementBreakStSt:[ステートID],[減少率]>
  * 例：<ElementBreakSt:1,0.2>
  * →ステートIDが1の付与をする時、相手のステート有効度が+20%される。
  * 　元が50%なら70%、元が100%なら120%。
+ * 
+ * 弱体有効度に対するブレイクは以下のように設定できます
+ * 
+ * <ElementBreakStPr:[ステートID],[減少率]>
+ * 例：<ElementBreakPr:atk,0.2>
+ * →攻撃力の弱体化を付与をする時、相手の弱体有効度が+20%される。
+ * 　元が50%なら70%、元が100%なら120%。
+ * 
  * 
  * 【プラグインパラメータ】
  * ・無効属性にブレイクが有効か
@@ -32,14 +40,33 @@
  * パラメータがflaseの場合
  * 　属性有効度が0%であるものとしてダメージを計算します。
  * 
+ * ・無効耐性にブレイクが有効か
+ * ステート有効度が0の場合にこのプラグインで適用された特徴を適用するかどうかを選択します。
+ * 例：<ElementBreak:1,0.2>を持つバトラーが
+ * 　　ステートID：1のステート有効度が0%のバトラーにステートID；1を付与した場合
+ * パラメータがtrueの場合
+ * 　ステート有効度が20%であるものとして判定を行います。
+ * パラメータがflaseの場合
+ * 　ステート有効度が0%であるものとして判定を行います。
+ * 
+ * ・無効弱体にブレイクが有効か
+ * 弱体有効度が0の場合にこのプラグインで適用された特徴を適用するかどうかを選択します。
+ * 例：<ElementBreak:1,0.2>を持つバトラーが
+ * 　　攻撃力の弱体有効度が0%のバトラーに攻撃力弱体化を付与した場合
+ * パラメータがtrueの場合
+ * 　弱体有効度が20%であるものとして判定を行います。
+ * パラメータがflaseの場合
+ * 　弱体有効度が0%であるものとして判定を行います。
+ * 
  * 【備考】
- * 同じ属性について複数設定されている場合、加算されます
+ * 同じ有効度について複数設定されている場合、加算されます
  * 
  * 例：<ElementBreak:1,0.1>と<ElementBreak:1,0.2>を持つバトラー
  * →属性IDが1の攻撃をする時、相手の属性有効度が+30%される。
  * 
  * 【更新履歴】
  * ver1.0 公開
+ * ber1.1 ステート、能力弱体化に対応
  * 
  * @param  無効属性にブレイクが有効か
  * @type boolean
@@ -57,6 +84,14 @@
  * trueで適用する。falseで適用しない
  * デフォルト：false
  * 
+ * @param  無効弱体にブレイクが有効か
+ * @type boolean
+ * @default false
+ * @desc
+ * 対象の属性有効度が0の場合に、このプラグインで定義された特徴を適用するかどうか。
+ * trueで適用する。falseで適用しない
+ * デフォルト：false
+ * 
  */
 
 (() => {
@@ -65,6 +100,7 @@
     const params = PluginManager.parameters(PluginName);
     const isDQM3 = params["無効属性にブレイクが有効か"] === 'true';
     const isDQM3St = params["無効耐性にブレイクが有効か"] === 'true';
+    const isDQM3Pr = params["無効弱体にブレイクが有効か"] === 'true';
 
     // BattleManagerにプロパティを追加
     BattleManager.runningAction = null;
@@ -186,7 +222,7 @@
 
     const _Game_BattlerBase_prototype_stateRate = Game_BattlerBase.prototype.stateRate;
     Game_BattlerBase.prototype.stateRate = function (stateId) {
-        const elementRate = _Game_BattlerBase_prototype_stateRate.call(this, stateId)
+        const stateRate = _Game_BattlerBase_prototype_stateRate.call(this, stateId)
 
         // 戦闘シーンでのみ機能
         if (SceneManager._scene instanceof Scene_Battle && BattleManager.runningAction) {
@@ -201,13 +237,91 @@
                     breakRate += Number(breakList[i][1]);
                 }
             }
-            if (elementRate == 0) {
+            if (stateRate == 0) {
                 return isDQM3St ? breakRate : 0;
             } else {
-                return elementRate + breakRate;
+                return stateRate + breakRate;
             }
         } else {
-            return elementRate;
+            return stateRate;
+        }
+    };
+
+
+    // 弱体有効度の耐性ブレイク処理
+    const _Game_Action_prototype_itemEffectAddDebuff = Game_Action.prototype.itemEffectAddDebuff;
+    Game_Action.prototype.itemEffectAddDebuff = function(target, effect) {
+        BattleManager.runningAction = this;
+        BattleManager.runningTarget = target;
+        _Game_Action_prototype_itemEffectAddDebuff.call(this,target,effect);
+    };
+
+    Game_Battler.prototype.breakAllTraitsPr = function () {
+        return this.traitObjects().reduce((r, trait) => {
+            r.push(...this.breakNoteDataPrPr(trait));
+            return r;
+        }, []);
+    };
+
+    Game_Battler.prototype.breakNoteDataPr = function (traits) {
+        const re = /<(?:ElementBreakPrPr):\s*(.*)>/g;
+        const data = [];
+        while (true) {
+            let match = re.exec(traits.note);
+            if (match) {
+                data.push(match[1].split(','));
+            } else {
+                break;
+            }
+        }
+        return data;
+    };
+
+    function mapParamId(paramId){
+        switch(mapParamId){
+            case 0:
+                return 'mhp';
+            case 1:
+                return 'mmp';
+            case 2:
+                return 'atk';
+            case 3:
+                return 'def';
+            case 4:
+                return 'mat';
+            case 5:
+                return 'mdf';
+            case 6:
+                return 'agi';
+            case 7:
+                return 'luk';
+        }
+    }
+
+    const _Game_BattlerBase_prototype_debuffRate = Game_BattlerBase.prototype.debuffRate;
+    Game_BattlerBase.prototype.debuffRate = function (paramId) {
+        const paramRate = _Game_BattlerBase_prototype_debuffRate.call(this, paramId)
+
+        // 戦闘シーンでのみ機能
+        if (SceneManager._scene instanceof Scene_Battle && BattleManager.runningAction) {
+            
+            // 必要なオブジェクトを取得
+            const battler = BattleManager.runningAction.subject();
+            const breakList = battler.breakAllTraitsPr();
+
+            let breakRate = 0;
+            for (let i = 0; i < breakList.length; i++) {
+                if (breakList[i][0] == mapParamId(paramId)) {
+                    breakRate += Number(breakList[i][1]);
+                }
+            }
+            if (paramRate == 0) {
+                return isDQM3Pr ? breakRate : 0;
+            } else {
+                return paramRate + breakRate;
+            }
+        } else {
+            return paramRate;
         }
     };
 })();
