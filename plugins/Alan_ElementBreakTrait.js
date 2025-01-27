@@ -15,6 +15,13 @@
  * →属性IDが1の攻撃をする時、相手の属性有効度が+20%される。
  * 　元が50%なら70%、元が100%なら120%。
  * 
+ * ステートに対するブレイクは以下のように設定できます
+ * 
+ * <ElementBreakStSt:[ステートID],[減少率]>
+ * 例：<ElementBreakSt:1,0.2>
+ * →ステートIDが1の付与をする時、相手のステート有効度が+20%される。
+ * 　元が50%なら70%、元が100%なら120%。
+ * 
  * 【プラグインパラメータ】
  * ・無効属性にブレイクが有効か
  * 属性有効度が0の場合にこのプラグインで適用された特徴を適用するかどうかを選択します。
@@ -42,6 +49,14 @@
  * trueで適用する。falseで適用しない
  * デフォルト：false
  * 
+ * @param  無効耐性にブレイクが有効か
+ * @type boolean
+ * @default false
+ * @desc
+ * 対象の属性有効度が0の場合に、このプラグインで定義された特徴を適用するかどうか。
+ * trueで適用する。falseで適用しない
+ * デフォルト：false
+ * 
  */
 
 (() => {
@@ -49,6 +64,7 @@
     const PluginName = "Alan_ElementBreakTrait";
     const params = PluginManager.parameters(PluginName);
     const isDQM3 = params["無効属性にブレイクが有効か"] === 'true';
+    const isDQM3St = params["無効耐性にブレイクが有効か"] === 'true';
 
     // BattleManagerにプロパティを追加
     BattleManager.runningAction = null;
@@ -131,6 +147,62 @@
             }
             if (elementRate == 0) {
                 return isDQM3 ? breakRate : 0;
+            } else {
+                return elementRate + breakRate;
+            }
+        } else {
+            return elementRate;
+        }
+    };
+
+    // ステートの耐性ブレイク処理
+    const _Game_Action_prototype_itemEffectAddState = Game_Action.prototype.itemEffectAddState;
+    Game_Action.prototype.itemEffectAddState = function(target, effect) {
+        BattleManager.runningAction = this;
+        BattleManager.runningTarget = target;
+        _Game_Action_prototype_itemEffectAddState.call(this,target,effect);
+    };
+
+    Game_Battler.prototype.breakAllTraitsSt = function () {
+        return this.traitObjects().reduce((r, trait) => {
+            r.push(...this.breakNoteDataSt(trait));
+            return r;
+        }, []);
+    };
+
+    Game_Battler.prototype.breakNoteDataSt = function (traits) {
+        const re = /<(?:ElementBreakSt):\s*(.*)>/g;
+        const data = [];
+        while (true) {
+            let match = re.exec(traits.note);
+            if (match) {
+                data.push(match[1].split(','));
+            } else {
+                break;
+            }
+        }
+        return data;
+    };
+
+    const _Game_BattlerBase_prototype_stateRate = Game_BattlerBase.prototype.stateRate;
+    Game_BattlerBase.prototype.stateRate = function (stateId) {
+        const elementRate = _Game_BattlerBase_prototype_stateRate.call(this, stateId)
+
+        // 戦闘シーンでのみ機能
+        if (SceneManager._scene instanceof Scene_Battle && BattleManager.runningAction) {
+            
+            // 必要なオブジェクトを取得
+            const battler = BattleManager.runningAction.subject();
+            const breakList = battler.breakAllTraitsSt();
+
+            let breakRate = 0;
+            for (let i = 0; i < breakList.length; i++) {
+                if (breakList[i][0] == stateId) {
+                    breakRate += Number(breakList[i][1]);
+                }
+            }
+            if (elementRate == 0) {
+                return isDQM3St ? breakRate : 0;
             } else {
                 return elementRate + breakRate;
             }
