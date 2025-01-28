@@ -24,10 +24,11 @@
  * 
  * 弱体有効度に対するブレイクは以下のように設定できます
  * 
- * <ElementBreakStPr:[ステートID],[減少率]>
+ * <ElementBreakStPr:[能力値名],[減少率]>
  * 例：<ElementBreakPr:atk,0.2>
  * →攻撃力の弱体化を付与をする時、相手の弱体有効度が+20%される。
  * 　元が50%なら70%、元が100%なら120%。
+ * ※[能力値名]はmhp,mmp,atk,def,mat,mdf,agi,lukに加えall(全能力)が使えます。
  * 
  * 
  * 【プラグインパラメータ】
@@ -66,7 +67,8 @@
  * 
  * 【更新履歴】
  * ver1.0 公開
- * ber1.1 ステート、能力弱体化に対応
+ * ver1.1 ステート、能力弱体化に対応
+ * ver1.11 ver1.1の不具合を修正、能力弱体ブレイクに全能力対応の記法を追加、ヘルプを修正
  * 
  * @param  無効属性にブレイクが有効か
  * @type boolean
@@ -111,25 +113,25 @@
         this.runningAction = null;
         this.runningTarget = null;
     };
-    
+
     const _BattleManager_startBattle = BattleManager.startBattle;
     BattleManager.startBattle = function () {
         this.resetRunningProperties();
         _BattleManager_startBattle.call(this);
     };
-    
+
     const _BattleManager_endBattle = BattleManager.endBattle;
     BattleManager.endBattle = function (result) {
         this.resetRunningProperties();
         _BattleManager_endBattle.call(this, result);
     };
-    
+
     const _BattleManager_startTurn = BattleManager.startTurn;
     BattleManager.startTurn = function () {
         this.resetRunningProperties();
         _BattleManager_startTurn.call(this);
     };
-    
+
     const _BattleManager_endTurn = BattleManager.endTurn;
     BattleManager.endTurn = function () {
         this.resetRunningProperties();
@@ -170,7 +172,7 @@
 
         // 戦闘シーンでのみ機能
         if (SceneManager._scene instanceof Scene_Battle && BattleManager.runningAction) {
-            
+
             // 必要なオブジェクトを取得
             const battler = BattleManager.runningAction.subject();
             const breakList = battler.breakAllTraits();
@@ -193,10 +195,10 @@
 
     // ステートの耐性ブレイク処理
     const _Game_Action_prototype_itemEffectAddState = Game_Action.prototype.itemEffectAddState;
-    Game_Action.prototype.itemEffectAddState = function(target, effect) {
+    Game_Action.prototype.itemEffectAddState = function (target, effect) {
         BattleManager.runningAction = this;
         BattleManager.runningTarget = target;
-        _Game_Action_prototype_itemEffectAddState.call(this,target,effect);
+        _Game_Action_prototype_itemEffectAddState.call(this, target, effect);
     };
 
     Game_Battler.prototype.breakAllTraitsSt = function () {
@@ -226,7 +228,7 @@
 
         // 戦闘シーンでのみ機能
         if (SceneManager._scene instanceof Scene_Battle && BattleManager.runningAction) {
-            
+
             // 必要なオブジェクトを取得
             const battler = BattleManager.runningAction.subject();
             const breakList = battler.breakAllTraitsSt();
@@ -250,21 +252,21 @@
 
     // 弱体有効度の耐性ブレイク処理
     const _Game_Action_prototype_itemEffectAddDebuff = Game_Action.prototype.itemEffectAddDebuff;
-    Game_Action.prototype.itemEffectAddDebuff = function(target, effect) {
+    Game_Action.prototype.itemEffectAddDebuff = function (target, effect) {
         BattleManager.runningAction = this;
         BattleManager.runningTarget = target;
-        _Game_Action_prototype_itemEffectAddDebuff.call(this,target,effect);
+        _Game_Action_prototype_itemEffectAddDebuff.call(this, target, effect);
     };
 
     Game_Battler.prototype.breakAllTraitsPr = function () {
         return this.traitObjects().reduce((r, trait) => {
-            r.push(...this.breakNoteDataPrPr(trait));
+            r.push(...this.breakNoteDataPr(trait));
             return r;
         }, []);
     };
 
     Game_Battler.prototype.breakNoteDataPr = function (traits) {
-        const re = /<(?:ElementBreakPrPr):\s*(.*)>/g;
+        const re = /<(?:ElementBreakPr):\s*(.*)>/g;
         const data = [];
         while (true) {
             let match = re.exec(traits.note);
@@ -277,8 +279,8 @@
         return data;
     };
 
-    function mapParamId(paramId){
-        switch(mapParamId){
+    function mapParamId(paramId) {
+        switch (paramId) {
             case 0:
                 return 'mhp';
             case 1:
@@ -304,14 +306,14 @@
 
         // 戦闘シーンでのみ機能
         if (SceneManager._scene instanceof Scene_Battle && BattleManager.runningAction) {
-            
+
             // 必要なオブジェクトを取得
             const battler = BattleManager.runningAction.subject();
             const breakList = battler.breakAllTraitsPr();
 
             let breakRate = 0;
             for (let i = 0; i < breakList.length; i++) {
-                if (breakList[i][0] == mapParamId(paramId)) {
+                if (breakList[i][0] == mapParamId(paramId) || breakList[i][0] == 'all') {
                     breakRate += Number(breakList[i][1]);
                 }
             }
