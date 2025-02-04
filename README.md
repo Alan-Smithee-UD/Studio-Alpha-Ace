@@ -10,3 +10,7 @@
 
 ## Alan_ElementBreakTrait
 相手の属性有効度に一定の値を加算してダメージ計算を行う特徴を追加します。
+
+## Alan_ResetVariablesOnBattleStart
+戦闘開始時に指定した変数をリセットしたりできます。  
+ほぼ自分用ですが一応置いておきます。
